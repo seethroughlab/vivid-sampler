@@ -1,0 +1,36 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  smoke:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Clone vivid-core
+        run: |
+          rm -rf ${{ github.workspace }}/../vivid
+          git clone --recurse-submodules https://github.com/seethroughlab/vivid.git ${{ github.workspace }}/../vivid
+
+      - name: Configure vivid-core
+        run: cmake -B ${{ github.workspace }}/../vivid/build -S ${{ github.workspace }}/../vivid -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Create app bundle skeleton
+        run: mkdir -p ${{ github.workspace }}/../vivid/build/vivid.app/Contents/PlugIns
+
+      - name: Build vivid core operators
+        run: cmake --build ${{ github.workspace }}/../vivid/build --target operators -j$(sysctl -n hw.logicalcpu)
+
+      - name: Configure package
+        run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DVIVID_SRC_DIR=${{ github.workspace }}/../vivid -DVIVID_BUILD_DIR=${{ github.workspace }}/../vivid/build
+
+      - name: Build package operators
+        run: cmake --build build --target operators -j$(sysctl -n hw.logicalcpu)
