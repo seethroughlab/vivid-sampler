@@ -1,0 +1,8 @@
+{
+  "name": "vivid-sampler",
+  "version": "0.1.0",
+  "vivid_core": ">=0.1.0 <2.0.0",
+  "description": "Sample playback operators for Vivid",
+  "build": "cmake",
+  "operators": ["sp404", "sampler", "slicer"]
+}
