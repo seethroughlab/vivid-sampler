@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "vivid_core": ">=0.1.0 <2.0.0",
   "description": "Sample playback operators for Vivid",
+  "author": "seethroughlab",
+  "category": "audio",
+  "tags": ["audio", "sampler", "playback"],
   "build": "cmake",
   "operators": ["sp404", "sampler", "slicer"]
 }

@@ -45,8 +45,7 @@ struct SP404 : vivid::AudioOperatorBase {
         out.push_back({"gates",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"notes",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"velocities", VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
-        out.push_back({"left",       VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT});
-        out.push_back({"right",      VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT});
+        out.push_back({"output",     VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT, 0, 2});
     }
 
     void main_thread_update(double /*time*/) override {
@@ -74,7 +73,7 @@ struct SP404 : vivid::AudioOperatorBase {
         if (!bank || bank->groups.empty()) {
             for (uint32_t i = 0; i < ctx->buffer_size; ++i) {
                 ctx->output_buffers[0][i] = 0.0f;
-                ctx->output_buffers[1][i] = 0.0f;
+                ctx->output_buffers[0][ctx->buffer_size + i] = 0.0f;
             }
             return;
         }
@@ -111,7 +110,10 @@ struct SP404 : vivid::AudioOperatorBase {
                     vel = vels_in.data[slot];
 
                 const SampleRegion* region = find_region(group, note, vel);
-                if (!region || !region->data) continue;
+                if (!region || !region->data) {
+                    region = find_nearest_region(group, note);
+                    if (!region || !region->data) continue;
+                }
 
                 // Find voice: reuse one already playing this note, or allocate
                 int vi = -1;
@@ -169,8 +171,8 @@ struct SP404 : vivid::AudioOperatorBase {
             out_L *= p_volume;
             out_R *= p_volume;
 
-            ctx->output_buffers[0][s] = out_L;
-            ctx->output_buffers[1][s] = out_R;
+            ctx->output_buffers[0][s]                      = out_L;  // channel 0
+            ctx->output_buffers[0][ctx->buffer_size + s]   = out_R;  // channel 1
 
             frame_counter_++;
         }

@@ -144,6 +144,21 @@ inline const SampleRegion* find_region(const SampleGroup& group, int note, float
     return find_region(group, note, vel127);
 }
 
+// Fallback: find the region whose root_note is closest to the requested note
+inline const SampleRegion* find_nearest_region(const SampleGroup& group, int note) {
+    const SampleRegion* best = nullptr;
+    int best_dist = INT_MAX;
+    for (const auto& r : group.regions) {
+        if (!r.data) continue;
+        int dist = std::abs(note - r.root_note);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best = &r;
+        }
+    }
+    return best;
+}
+
 // ---------------------------------------------------------------------------
 // JSON helpers
 // ---------------------------------------------------------------------------
