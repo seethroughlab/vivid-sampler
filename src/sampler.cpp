@@ -1,5 +1,6 @@
 #include "operator_api/operator.h"
 #include "operator_api/adsr.h"
+#include "operator_api/adsr_inspector.h"
 #include "sample_bank.h"
 #include "voice.h"
 #include <atomic>
@@ -31,6 +32,16 @@ struct Sampler : vivid::AudioOperatorBase {
     ~Sampler() {
         delete bank_.load(std::memory_order_relaxed);
         delete deferred_delete_;
+    }
+
+    void draw_inspector(VividInspectorContext* ctx) override {
+        // Param order: file=0, attack=1, decay=2, sustain=3, release=4
+        float a = (ctx->param_count > 1) ? ctx->param_values[1] : 0.0f;
+        float d = (ctx->param_count > 2) ? ctx->param_values[2] : 0.0f;
+        float s = (ctx->param_count > 3) ? ctx->param_values[3] : 0.0f;
+        float r = (ctx->param_count > 4) ? ctx->param_values[4] : 0.0f;
+        bool bypassed = (a == 0.0f && d == 0.0f && s == 0.0f && r == 0.0f);
+        vivid::adsr_inspector::draw(ctx, a, d, s, r, bypassed);
     }
 
     void collect_params(std::vector<vivid::ParamBase*>& out) override {
@@ -190,3 +201,4 @@ struct Sampler : vivid::AudioOperatorBase {
 };
 
 VIVID_REGISTER(Sampler)
+VIVID_INSPECTOR(Sampler)
