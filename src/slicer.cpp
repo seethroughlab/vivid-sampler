@@ -1,5 +1,7 @@
 #include "operator_api/operator.h"
 #include "operator_api/adsr.h"
+#include "operator_api/midi_types.h"
+#include "operator_api/type_id.h"
 #include "sample_bank.h"
 #include "voice.h"
 #include <atomic>
@@ -56,7 +58,8 @@ struct Slicer : vivid::AudioOperatorBase {
         out.push_back({"gates",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"notes",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"velocities", VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
-        out.push_back({"output",     VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT, 0, 2});
+        out.push_back(VIVID_CUSTOM_REF_PORT("midi_in", VIVID_PORT_INPUT, VividMidiBuffer));
+        out.push_back({"output",     VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT, VIVID_PORT_TRANSPORT_AUDIO_BUFFER, 0, nullptr, 2});
     }
 
     void main_thread_update(double /*time*/) override {
@@ -128,6 +131,55 @@ struct Slicer : vivid::AudioOperatorBase {
         SpreadInput gates_in = read_spread_input(ctx->input_spreads, 0);
         SpreadInput notes_in = read_spread_input(ctx->input_spreads, 1);
         SpreadInput vels_in  = read_spread_input(ctx->input_spreads, 2);
+
+        // Process MIDI input
+        if (ctx->custom_inputs && ctx->custom_input_count > 0 && ctx->custom_inputs[0]) {
+            auto* midi = static_cast<const VividMidiBuffer*>(ctx->custom_inputs[0]);
+            for (uint32_t m = 0; m < midi->count; ++m) {
+                const auto& msg = midi->messages[m];
+                uint8_t status = msg.status & 0xF0;
+
+                if (status == 0x90 && msg.data2 > 0) {
+                    int note = msg.data1;
+                    float vel = msg.data2 / 127.0f;
+
+                    int slice_index = std::clamp(note - kBaseNote, 0, p_slices - 1);
+                    uint32_t s_start = static_cast<uint32_t>(slice_index) * slice_len;
+                    uint32_t s_end = s_start + slice_len;
+                    if (s_end > total_frames) s_end = total_frames;
+
+                    int vi = -1;
+                    for (int j = 0; j < kMaxVoices; ++j) {
+                        if (voices_[j].active && voices_[j].note == note) {
+                            vi = j; break;
+                        }
+                    }
+                    if (vi < 0) vi = find_free_voice(voices_, kMaxVoices);
+                    if (vi < 0) vi = steal_oldest_voice(voices_, kMaxVoices);
+
+                    voices_[vi].active = true;
+                    voices_[vi].note = note;
+                    voices_[vi].velocity = vel;
+                    voices_[vi].region = nullptr;
+                    voices_[vi].playback_rate = playback_rate;
+                    voices_[vi].playback_pos = static_cast<double>(s_start);
+                    voices_[vi].one_shot = (p_mode == 0);
+                    voices_[vi].start_frame = frame_counter_;
+                    vivid::adsr::gate_on(voices_[vi].envelope);
+
+                    voice_slice_start_[vi] = s_start;
+                    voice_slice_end_[vi] = s_end;
+                } else if (status == 0x80 || (status == 0x90 && msg.data2 == 0)) {
+                    int note = msg.data1;
+                    for (int j = 0; j < kMaxVoices; ++j) {
+                        if (voices_[j].active && voices_[j].note == note) {
+                            voice_note_off(voices_[j]);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
         // Process gate edges
         uint32_t num_slots = std::min(gates_in.length, static_cast<uint32_t>(kMaxVoices));

@@ -1,5 +1,7 @@
 #include "operator_api/operator.h"
 #include "operator_api/adsr.h"
+#include "operator_api/midi_types.h"
+#include "operator_api/type_id.h"
 #include "sample_bank.h"
 #include "voice.h"
 #include <atomic>
@@ -45,7 +47,8 @@ struct SP404 : vivid::AudioOperatorBase {
         out.push_back({"gates",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"notes",      VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
         out.push_back({"velocities", VIVID_PORT_SPREAD, VIVID_PORT_INPUT});
-        out.push_back({"output",     VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT, 0, 2});
+        out.push_back(VIVID_CUSTOM_REF_PORT("midi_in", VIVID_PORT_INPUT, VividMidiBuffer));
+        out.push_back({"output",     VIVID_PORT_AUDIO,  VIVID_PORT_OUTPUT, VIVID_PORT_TRANSPORT_AUDIO_BUFFER, 0, nullptr, 2});
     }
 
     void main_thread_update(double /*time*/) override {
@@ -93,6 +96,50 @@ struct SP404 : vivid::AudioOperatorBase {
         float dt        = 1.0f / static_cast<float>(ctx->sample_rate);
 
         const SampleGroup& group = bank->groups[0];
+
+        // Process MIDI input
+        if (ctx->custom_inputs && ctx->custom_input_count > 0 && ctx->custom_inputs[0]) {
+            auto* midi = static_cast<const VividMidiBuffer*>(ctx->custom_inputs[0]);
+            for (uint32_t m = 0; m < midi->count; ++m) {
+                const auto& msg = midi->messages[m];
+                uint8_t status = msg.status & 0xF0;
+
+                if (status == 0x90 && msg.data2 > 0) {
+                    int note = msg.data1;
+                    float vel = msg.data2 / 127.0f;
+
+                    const SampleRegion* region = find_region(group, note, vel);
+                    if (!region || !region->data) {
+                        region = find_nearest_region(group, note);
+                        if (!region || !region->data) continue;
+                    }
+
+                    int vi = -1;
+                    for (int j = 0; j < kMaxPads; ++j) {
+                        if (voices_[j].active && voices_[j].note == note) {
+                            vi = j; break;
+                        }
+                    }
+                    if (vi < 0) vi = find_free_voice(voices_, kMaxPads);
+                    if (vi < 0) vi = steal_oldest_voice(voices_, kMaxPads);
+
+                    double rate = static_cast<double>(region->data->sample_rate) /
+                                  static_cast<double>(ctx->sample_rate);
+                    bool one_shot = (p_mode == 0);
+
+                    voice_note_on(voices_[vi], note, vel, region, rate,
+                                  frame_counter_, one_shot);
+                } else if (status == 0x80 || (status == 0x90 && msg.data2 == 0)) {
+                    int note = msg.data1;
+                    for (int j = 0; j < kMaxPads; ++j) {
+                        if (voices_[j].active && voices_[j].note == note) {
+                            voice_note_off(voices_[j]);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
         // Process gate edges
         uint32_t num_slots = std::min(gates_in.length, static_cast<uint32_t>(kMaxPads));
