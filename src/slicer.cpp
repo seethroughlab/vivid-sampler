@@ -330,4 +330,15 @@ struct Slicer : vivid::AudioOperatorBase {
     }
 };
 
+static const char* kSlicerDropExts[] = {".wav"};
+static const VividFileDropHandlerDescriptor kSlicerFileDrops[] = {{
+    "Slice Sample",
+    kSlicerDropExts,
+    1,
+    "file",
+    100,
+    "Create a Slicer node from a dropped WAV file.",
+}};
+
 VIVID_REGISTER(Slicer)
+VIVID_FILE_DROP(kSlicerFileDrops)

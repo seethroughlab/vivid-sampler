@@ -249,5 +249,16 @@ struct Sampler : vivid::AudioOperatorBase {
     }
 };
 
+static const char* kSamplerDropExts[] = {".wav"};
+static const VividFileDropHandlerDescriptor kSamplerFileDrops[] = {{
+    "Load Sample",
+    kSamplerDropExts,
+    1,
+    "file",
+    50,
+    "Create a Sampler node from a dropped WAV file.",
+}};
+
 VIVID_REGISTER(Sampler)
+VIVID_FILE_DROP(kSamplerFileDrops)
 VIVID_INSPECTOR(Sampler)
